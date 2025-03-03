@@ -62,23 +62,24 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
   # Initialize counters
   polyprotein_count <- 0
   batch_size <- 100
+  skipped_count <- 0
   
   # Process in batches
-  for(i in seq(1, total_count, by = batch_size)) {
-    batch_end <- min(i + batch_size - 1, total_count)
-    cat(paste0("Processing records ", i, " to ", batch_end, " of ", total_count, "...\n"))
-    
-  # Get batch of IDs
-  this_batch_size <- min(batch_size, total_count - (i - 1))
-  cat("Requesting", this_batch_size, "records in this batch...\n")
-  search_batch <- entrez_search(
-    db = "nuccore",
-    term = search_term,
-    retmax = this_batch_size,
-    retstart = i - 1,
-    use_history = TRUE
-  )
-  cat("Got", length(search_batch$ids), "record IDs\n")
+    for(i in seq(1, total_count, by = batch_size)) {
+      batch_end <- min(i + batch_size - 1, total_count)
+      cat(paste0("Processing records ", i, " to ", batch_end, " of ", total_count, "...\n"))
+
+      # Get batch of IDs
+      this_batch_size <- min(batch_size, total_count - (i - 1))
+      cat("Requesting", this_batch_size, "records in this batch...\n")
+      search_batch <- entrez_search(
+        db = "nuccore",
+        term = search_term,
+        retmax = this_batch_size,
+        retstart = i - 1,
+        use_history = TRUE
+      )
+      cat("Got", length(search_batch$ids), "record IDs\n")
     
     # Fetch records
     records <- entrez_fetch(
@@ -149,16 +150,13 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
             NULL
           }
           
-          # Only process polyproteins
+       # Only process polyproteins
           if(grepl("polyprotein", product, ignore.case = TRUE)) {
     cat("Found polyprotein:", product, "\n")
     if(is.null(protein_id)) {
       cat("WARNING: No protein_id found for this polyprotein. Skipping.\n")
     } else {
       cat("Found protein_id:", protein_id, "\n")
-      # ...rest of code...
-    }
-  }
             # Get protein sequence using protein_id
             tryCatch({
               protein_record <- entrez_fetch(
@@ -192,10 +190,9 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
         }
       }
     }
-    
     # Avoid overloading the server
     Sys.sleep(1)
-  }
+}
   
   cat("\nDownload complete! Added", polyprotein_count, "viral polyproteins to", output_file, "\n")
   return(output_file)
