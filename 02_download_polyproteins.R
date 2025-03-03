@@ -68,14 +68,17 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
     batch_end <- min(i + batch_size - 1, total_count)
     cat(paste0("Processing records ", i, " to ", batch_end, " of ", total_count, "...\n"))
     
-    # Get batch of IDs
-    search_batch <- entrez_search(
-      db = "nuccore", 
-      term = search_term, 
-      retmax = batch_size, 
-      retstart = i - 1,
-      use_history = TRUE
-    )
+  # Get batch of IDs
+  this_batch_size <- min(batch_size, total_count - (i - 1))
+  cat("Requesting", this_batch_size, "records in this batch...\n")
+  search_batch <- entrez_search(
+    db = "nuccore",
+    term = search_term,
+    retmax = this_batch_size,
+    retstart = i - 1,
+    use_history = TRUE
+  )
+  cat("Got", length(search_batch$ids), "record IDs\n")
     
     # Fetch records
     records <- entrez_fetch(
@@ -95,6 +98,11 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
     }
     
     cat("Processing", length(gb_records), "records in this batch.\n")
+
+    # Add debugging
+  cat("First 100 characters of records data:\n")
+  cat(substr(records, 1, 100), "\n")
+  cat("Number of records after splitting:", length(gb_records), "\n")
     
     # Process each record
     for(record_text in gb_records) {
@@ -142,7 +150,15 @@ download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, 
           }
           
           # Only process polyproteins
-          if(grepl("polyprotein", product, ignore.case = TRUE) && !is.null(protein_id)) {
+          if(grepl("polyprotein", product, ignore.case = TRUE)) {
+    cat("Found polyprotein:", product, "\n")
+    if(is.null(protein_id)) {
+      cat("WARNING: No protein_id found for this polyprotein. Skipping.\n")
+    } else {
+      cat("Found protein_id:", protein_id, "\n")
+      # ...rest of code...
+    }
+  }
             # Get protein sequence using protein_id
             tryCatch({
               protein_record <- entrez_fetch(
