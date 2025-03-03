@@ -157,8 +157,22 @@ create_fasta_header <- function(accession, taxonomy, organism, protein_name) {
 }
 
 # If this script is run directly (not sourced), ask for credentials
-if(!interactive()) {
-  cat("Initializing viral protein database pipeline...\n")
-  credentials <- get_ncbi_credentials()
-  cat("Configuration complete. Ready to proceed with pipeline.\n")
-}
+  if(!interactive()) {
+    cat("Initializing viral protein database pipeline...\n")
+
+    # Get command line arguments
+    args <- commandArgs(trailingOnly = TRUE)
+
+    # Check if email was provided as command line argument
+    if(length(args) >= 1) {
+      email <- args[1]
+      api_key <- if(length(args) >= 2) args[2] else NULL
+
+      credentials <- list(email = email, api_key = api_key)
+      saveRDS(credentials, "viral_db_credentials.rds")
+      cat("Configuration complete. Credentials saved.\n")
+    } else {
+      cat("ERROR: Email required. Please run with:\n")
+      cat("Rscript 01_config.R your.email@example.com [optional_api_key]\n")
+    }
+  }
