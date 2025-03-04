@@ -11,9 +11,16 @@
   #' @param credentials NCBI credentials (email and API key)
   #' @param max_records Maximum number of records to download (NULL for all)
   #' @param output_file Output FASTA filename (NULL for auto-generated)
-  #' @return Path to output file with downloaded polyproteins
+  #' @return List containing output file path and stats
   #' @export
   download_viral_polyproteins <- function(credentials = NULL, max_records = NULL, output_file = NULL) {
+    # Initialize result counters at the beginning
+    result <- list(
+      output_file = NULL,
+      polyprotein_count = 0,
+      skipped_count = 0
+    )
+
     # Load credentials if not provided
     if(is.null(credentials)) {
       if(file.exists("viral_db_credentials.rds")) {
@@ -33,6 +40,7 @@
     if(is.null(output_file)) {
       output_file <- get_dated_filename("viral_polyprotein")
     }
+    result$output_file <- output_file
 
     # Create or clear output file
     file.create(output_file)
@@ -48,7 +56,7 @@
 
     if(total_count == 0) {
       cat("No records found matching the search criteria.\n")
-      return(output_file)
+      return(result)
     }
 
     cat("Found", total_count, "viral polyprotein records.\n")
@@ -61,8 +69,8 @@
 
     # Initialize counters
     polyprotein_count <- 0
-    batch_size <- 100
     skipped_count <- 0
+    batch_size <- 100
 
     # Process in batches
     for(i in seq(1, total_count, by = batch_size)) {
@@ -156,6 +164,7 @@
               if(is.null(protein_id)) {
                 cat("WARNING: No protein_id found for this polyprotein. Skipping.\n")
                 skipped_count <- skipped_count + 1
+                result$skipped_count <- result$skipped_count + 1
               } else {
                 cat("Found protein_id:", protein_id, "\n")
                 # Get protein sequence using protein_id
@@ -181,12 +190,15 @@
                       append = TRUE)
 
                   polyprotein_count <- polyprotein_count + 1
+                  result$polyprotein_count <- result$polyprotein_count + 1
+
                   if(polyprotein_count %% 100 == 0) {
                     cat("Downloaded", polyprotein_count, "polyproteins so far...\n")
                   }
                 }, error = function(e) {
                   cat("Error fetching protein", protein_id, ":", conditionMessage(e), "\n")
                   skipped_count <- skipped_count + 1
+                  result$skipped_count <- result$skipped_count + 1
                 })
               }
             }
@@ -195,11 +207,11 @@
       }
       # Avoid overloading the server
       Sys.sleep(1)
-    }  # <-- This is the closing brace for the for loop
+    }  # End of for loop
 
-    cat("\nDownload complete! Added", polyprotein_count, "viral polyproteins to", output_file, "\n")
-    cat("Skipped", skipped_count, "polyproteins due to missing protein IDs or fetch errors.\n")
-    return(output_file)
+    cat("\nDownload complete! Added", result$polyprotein_count, "viral polyproteins to", output_file, "\n")
+    cat("Skipped", result$skipped_count, "polyproteins due to missing protein IDs or fetch errors.\n")
+    return(result)
   }
 
   # If this script is run directly (not sourced), download polyproteins
@@ -213,7 +225,8 @@
       max_records <- as.numeric(args[1])
     }
 
-    output_file <- download_viral_polyproteins(max_records = max_records)
+    result <- download_viral_polyproteins(max_records = max_records)
     cat("Viral polyprotein download complete.\n")
-    cat("Output saved to:", output_file, "\n")
+    cat("Output saved to:", result$output_file, "\n")
+    cat("Total polyproteins downloaded:", result$polyprotein_count, "\n")
   }
