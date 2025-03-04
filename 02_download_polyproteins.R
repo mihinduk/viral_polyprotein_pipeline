@@ -118,28 +118,40 @@
         # Add LOCUS back for proper parsing
         record_text <- paste0("LOCUS", record_text)
 
-        # Extract basic info
-        accession <- gsub(".*ACCESSION\\s+([^\\s]+).*", "\\1", record_text, perl = TRUE)
-        if(accession == record_text) accession <- "unknown"
-
-        organism_match <- regexpr("ORGANISM\\s+([^\\n]+)", record_text, perl = TRUE)
-        organism <- if(organism_match > 0) {
-          trimws(gsub("ORGANISM\\s+", "", regmatches(record_text, organism_match)))
+        # Extract definition, preserving spaces
+        definition_match <- regexpr("DEFINITION\\s+([^\\n]+(?:\\n\\s+[^\\n]+)*)", record_text, perl = TRUE)
+        definition <- if(definition_match > 0) {
+          # Get the full multi-line definition and remove newlines and extra whitespace
+          definition_text <- regmatches(record_text, definition_match)
+          gsub("DEFINITION\\s+", "", definition_text)
+          definition_cleaned <- gsub("\\n\\s+", " ", definition_text)
+          definition_cleaned <- gsub("DEFINITION\\s+", "", definition_cleaned)
+          trimws(definition_cleaned)
         } else {
           "unknown"
         }
-
+        cat("Processing record:", accession, "-", substring(definition, 1, 50), "...\n")
+        organism_match <- regexpr("ORGANISM\\s+([^\\n]+)", record_text, perl = TRUE)
+        organism <- if(organism_match > 0) {
+        trimws(gsub("ORGANISM\\s+", "", regmatches(record_text, organism_match)))
+       
         # Extract taxonomy
         taxonomy_block <- gsub(".*ORGANISM[^\\n]*\\n\\s*([^/]*?)\\n/.*", "\\1", record_text, perl = TRUE)
         taxonomy <- gsub("\\s+", " ", taxonomy_block)
 
-        # Find CDS features that contain "polyprotein"
-        cds_pattern <- "/CDS\\s+([^/]+).*?/product=\"([^\"]*polyprotein[^\"]*)\".*?(/protein_id=\"([^\"]+)\")?.*?\\n"
+        # Try two approaches to find polyprotein CDS features
+        cat("  Looking for polyprotein features in record", accession, "...\n")
+
+        # First approach: standard regex pattern
+        cds_pattern <- "/CDS\\s+([^/]+).*?/product=\"([^\"]*polyprotein[^\"]*)\".*?(/protein_id=\"([^\"]+)\")?.*?"
         cds_matches <- gregexpr(cds_pattern, record_text, perl = TRUE, ignore.case = TRUE)
 
-        # Process CDS features
+        # Process CDS features from standard pattern
+        polyprotein_features <- list()
+
         if(cds_matches[[1]][1] != -1) {
           cds_texts <- regmatches(record_text, cds_matches)[[1]]
+          cat("  Found", length(cds_texts), "potential polyprotein features with standard pattern.\n")
 
           for(cds_text in cds_texts) {
             # Extract product name
@@ -158,17 +170,70 @@
               NULL
             }
 
-            # Only process polyproteins
-            if(grepl("polyprotein", product, ignore.case = TRUE)) {
-              cat("Found polyprotein:", product, "\n")
-              if(is.null(protein_id)) {
-                cat("WARNING: No protein_id found for this polyprotein. Skipping.\n")
-                skipped_count <- skipped_count + 1
-                result$skipped_count <- result$skipped_count + 1
-              } else {
-                cat("Found protein_id:", protein_id, "\n")
+            if(!is.null(protein_id)) {
+              polyprotein_features[[protein_id]] <- list(product = product, protein_id = protein_id)
+            }
+          }
+        }
+
+        # Second approach: manually look for CDS sections and check for polyprotein product
+        if(length(polyprotein_features) == 0) {
+          cat("  Trying alternative approach to find polyprotein features...\n")
+
+          # Find all CDS sections
+          all_cds_pattern <- "/CDS\\s+([^/]+)"
+          all_cds_matches <- gregexpr(all_cds_pattern, record_text, perl = TRUE)
+
+          if(all_cds_matches[[1]][1] != -1) {
+            # Get the positions where CDS sections start
+            cds_start_positions <- attr(all_cds_matches[[1]], "capture.start")
+            cds_lengths <- attr(all_cds_matches[[1]], "capture.length")
+
+            for(i in 1:length(all_cds_matches[[1]])) {
+              # Extract a chunk of text starting from the CDS
+              pos <- all_cds_matches[[1]][i]
+              chunk_end <- min(pos + 1000, nchar(record_text))  # Look at next 1000 chars
+              chunk <- substr(record_text, pos, chunk_end)
+
+              # Check if this chunk contains polyprotein product
+              if(grepl('/product="[^"]*polyprotein[^"]*"', chunk, ignore.case = TRUE)) {
+                # Extract product
+                product_match <- regexpr('/product="([^"]*)"', chunk, perl = TRUE)
+                product <- if(product_match > 0) {
+                  gsub('/product="([^"]*)"', "\\1", regmatches(chunk, product_match))
+                } else {
+                  "polyprotein"
+                }
+
+                # Extract protein ID if present
+                protein_id_match <- regexpr('/protein_id="([^"]*)"', chunk, perl = TRUE)
+                protein_id <- if(protein_id_match > 0) {
+                  gsub('/protein_id="([^"]*)"', "\\1", regmatches(chunk, protein_id_match))
+                } else {
+                  NULL
+                }
+
+                if(!is.null(protein_id)) {
+                  cat("  Found polyprotein with alternative approach: protein_id =", protein_id, "\n")
+                  polyprotein_features[[protein_id]] <- list(product = product, protein_id = protein_id)
+                }
+              }
+            }
+          }
+        }
+
+        # Process all found polyprotein features
+        cat("  Total polyprotein features found:", length(polyprotein_features), "\n")
+
+        for(feature in polyprotein_features) {
+          product <- feature$product
+          protein_id <- feature$protein_id
+
+          # Only process polyproteins
+          if(grepl("polyprotein", product, ignore.case = TRUE) && !is.null(protein_id)) {
                 # Get protein sequence using protein_id
                 tryCatch({
+                  cat("  Fetching protein sequence for", protein_id, "...\n")
                   protein_record <- entrez_fetch(
                     db = "protein",
                     id = protein_id,
