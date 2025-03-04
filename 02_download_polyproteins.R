@@ -6,6 +6,13 @@
   # Load configuration and helper functions
   source("01_config.R")
 
+ # Ensure required packages are loaded
+  library(rentrez)
+  library(stringr)
+  library(Biostrings)
+  library(seqinr)
+  library(dplyr)
+
   #' Download all complete viral polyproteins
   #'
   #' @param credentials NCBI credentials (email and API key)
